@@ -28,7 +28,7 @@ const CATEGORIES = [
     {id: 'science', directory: 'GnomeScience.directory', fallback: 'Science', match: ['Science']},
     {id: 'education', directory: 'Education.directory', fallback: 'Education', match: ['Education']},
     {id: 'internet', directory: 'Network.directory', fallback: 'Internet', match: ['Network', 'WebBrowser', 'Email', 'Chat', 'InstantMessaging']},
-    {id: 'settings', directory: 'X-GNOME-SystemSettings.directory', fallback: 'System Settings', match: ['Settings']},
+    {id: 'settings', directory: 'Settings.directory', fallback: 'Preferences', match: ['Settings']},
     {id: 'system', directory: 'X-GNOME-Shell-System.directory', fallback: 'System', match: ['System', 'Monitor', 'PackageManager', 'TerminalEmulator']},
     {id: 'utilities', directory: 'X-GNOME-Shell-Utilities.directory', fallback: 'Utilities', match: ['Utility', 'Accessibility', 'Accessories']},
 ];
