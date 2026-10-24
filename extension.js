@@ -33,6 +33,13 @@ const CATEGORIES = [
     {id: 'utilities', directory: 'X-GNOME-Shell-Utilities.directory', fallback: 'Utilities', match: ['Utility', 'Accessibility', 'Accessories']},
 ];
 const OTHER = {id: 'other', directory: 'X-GNOME-Other.directory', fallback: 'Other', match: []};
+// Tile order, independent of the matching priority above: everyday apps
+// first, related categories next to each other, system ones last.
+const DISPLAY_ORDER = [
+    'internet', 'office', 'media', 'graphics',
+    'games', 'programming', 'science', 'education',
+    'utilities', 'system', 'settings', 'other',
+];
 
 const MIN_COLUMNS = 4;
 // Only used when even the widest grid does not fit at the preferred size.
@@ -94,8 +101,9 @@ function buildModel() {
     }
 
     const model = [];
-    for (const cat of [...CATEGORIES, OTHER]) {
-        const apps = groups.get(cat.id);
+    for (const id of DISPLAY_ORDER) {
+        const cat = [...CATEGORIES, OTHER].find(c => c.id === id);
+        const apps = groups.get(id);
         if (apps.length === 0)
             continue;
         apps.sort((a, b) =>
