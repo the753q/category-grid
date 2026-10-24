@@ -1,0 +1,6 @@
+{
+  "uuid": "category-grid-test@the753q.github.io",
+  "name": "Category Grid test driver",
+  "description": "Drives a headless GNOME Shell for test/run.sh. Not meant to be installed.",
+  "shell-version": ["50"]
+}

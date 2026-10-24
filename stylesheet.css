@@ -1,0 +1,30 @@
+/* Only sizes live here. Colors, hover and focus come from the shell theme
+ * through the classes the widgets reuse (.app-folder, .overview-tile,
+ * .dash-label), so light, dark and high contrast styles follow the system. */
+
+/* Space between category tiles. */
+.cg-grid {
+  column-spacing: 32px;
+  row-spacing: 16px;
+}
+
+/* A category tile: .app-folder background with four .overview-tile cells. */
+.cg-tile {
+  border-radius: 28px;
+  padding: 8px;
+  spacing: 4px;
+}
+
+/* Category name under the tile. */
+.overview-tile.cg-label {
+  font-weight: bold;
+  padding: 6px 10px;
+  margin-top: 4px;
+  border-radius: 999px;
+}
+
+/* Placeholder cell in categories with fewer than four apps. */
+.overview-tile.cg-empty {
+  background-color: transparent;
+  box-shadow: none;
+}

@@ -1,0 +1,10 @@
+{
+  "uuid": "category-grid@the753q.github.io",
+  "name": "Category Grid",
+  "description": "Replaces the app grid with Windows-style category folders: the three most used apps open directly, the fourth cell opens the whole category.",
+  "shell-version": [
+    "50"
+  ],
+  "version": 1,
+  "url": "https://github.com/the753q/category-grid"
+}
