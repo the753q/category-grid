@@ -1,10 +1,11 @@
 {
   "uuid": "category-grid@the753q.github.io",
   "name": "Category Grid",
-  "description": "Replaces the app grid with Windows-style category folders: the three most used apps open directly, the fourth cell opens the whole category.",
+  "description": "Replaces the app grid with category folders that fill themselves: the three most used apps of a category open directly, the fourth cell opens the whole category.",
   "shell-version": [
-    "50"
+    "50",
+    "51"
   ],
-  "version": 1,
+  "settings-schema": "org.gnome.shell.extensions.category-grid",
   "url": "https://github.com/the753q/category-grid"
 }

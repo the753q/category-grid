@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.category-grid" path="/org/gnome/shell/extensions/category-grid/">
+    <key name="top-apps" type="a{sas}">
+      <default>{}</default>
+      <summary>Apps on each category tile</summary>
+      <description>For each category, the ids of the apps that open straight from its tile, in cell order. Kept so that the tiles stay the same from one session to the next.</description>
+    </key>
+  </schema>
+</schemalist>

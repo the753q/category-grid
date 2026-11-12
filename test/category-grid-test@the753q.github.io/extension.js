@@ -79,6 +79,41 @@ async function dragToDock(pointer, icon) {
 
 const notFavorite = app => !getAppFavorites().isFavorite(app.get_id());
 
+// tileApps() from the extension, run against made-up apps and usage scores.
+async function testTileApps() {
+    const dir = Main.extensionManager.lookup(UUID).dir;
+    const {tileApps} = await import(dir.get_child('extension.js').get_uri());
+
+    const run = (scores, saved) => {
+        const usage = {
+            // Same contract as shell_app_usage_compare().
+            compare(a, b) {
+                if (!(a in scores) || !(b in scores))
+                    return (b in scores) - (a in scores);
+                return Math.trunc(scores[b] - scores[a]);
+            },
+        };
+        const all = {a: 0, b: 0, c: 0, d: 0, e: 0, ...scores};
+        const ranked = Object.keys(all)
+            .sort((a, b) => usage.compare(a, b) || a.localeCompare(b))
+            .map(id => ({get_id: () => id}));
+        const used = new Set(Object.keys(scores));
+        return tileApps(ranked, saved, usage, used).map(app => app.get_id()).join('');
+    };
+
+    const cases = [
+        ['first run: by usage', run({a: 10, b: 30, c: 20}, []), 'bca'],
+        ['saved cells are kept', run({a: 900, b: 100, c: 500}, ['c', 'b', 'a']), 'cba'],
+        ['a small lead changes nothing', run({a: 900, b: 100, c: 500, d: 300}, ['c', 'b', 'a']), 'cba'],
+        ['a clear lead takes the weakest cell', run({a: 900, b: 100, c: 500, d: 400}, ['c', 'b', 'a']), 'cda'],
+        ['never used gives way to used', run({a: 5, b: 5, d: 1}, ['a', 'b', 'c']), 'abd'],
+        ['never used keeps its cell otherwise', run({a: 5, b: 5}, ['a', 'c', 'b']), 'acb'],
+        ['an uninstalled app frees its cell', run({a: 9, b: 8, c: 7}, ['gone', 'c', 'b']), 'cba'],
+    ];
+    for (const [what, got, expected] of cases)
+        console.log(`CGTEST tileApps ${what}: ${got === expected ? 'ok' : `FAILED, got ${got}`}`);
+}
+
 // Upstream GNOME starts with the overview open, Ubuntu with it closed;
 // Main.overview.showApps() does nothing while the overview is already open.
 function showAppGrid() {
@@ -116,6 +151,10 @@ async function run() {
             return;
         for (const {name, apps} of view._model)
             console.log(`CGTEST category ${name}: ${apps.map(a => a.get_id()).join(', ')}`);
+        const small = view._model.filter(e => e.cat.id !== 'other' && e.apps.length < 3);
+        console.log(`CGTEST categories with fewer than 3 apps: ${small.length}`);
+
+        await testTileApps();
 
         // Open the biggest category through its label button.
         const big = view._model.reduce((a, b) => (b.apps.length > a.apps.length ? b : a)).cat.id;
@@ -125,6 +164,20 @@ async function run() {
         for (const dialog of view._dialogs)
             dialog.popdown();
         await wait(1000);
+        const folder = new Gio.Settings({
+            schema_id: 'org.gnome.desktop.app-folders.folder',
+            path: `/org/gnome/desktop/app-folders/folders/cg-${big}/`,
+        });
+        console.log(`CGTEST folder left out of dconf=${folder.get_user_value('name') === null}`);
+
+        // The tile apps are saved, and a saved order wins over usage order.
+        const settings = Main.extensionManager.lookup(UUID).stateObj._settings;
+        const tileIds = id => view._model.find(e => e.cat.id === id).apps.slice(0, 3)
+            .map(a => a.get_id()).join(',');
+        const saved = settings.get_value('top-apps').deepUnpack();
+        console.log(`CGTEST top apps saved=${saved[big].join(',') === tileIds(big)}`);
+        saved[big].reverse();
+        settings.set_value('top-apps', new GLib.Variant('a{sas}', saved));
 
         // Window picker -> app grid transitions must not shrink the icons.
         const controls = Main.overview._overview.controls;
@@ -138,8 +191,9 @@ async function run() {
             console.log(`CGTEST transition ${i} layout=${view._layoutKey} size=${view.get_size()}`);
         }
         await shot('3-after-transitions');
+        console.log(`CGTEST saved order kept=${saved[big].join(',') === tileIds(big)}`);
 
-        const seat = Clutter.get_default_backend().get_default_seat();
+        const seat = global.stage.context.get_backend().get_default_seat();
         const pointer = seat.create_virtual_device(Clutter.InputDeviceType.POINTER_DEVICE);
 
         // Dropping an app on another tile app must not create a GNOME folder.
@@ -168,6 +222,18 @@ async function run() {
         const folderIcon = dialog?._view._orderedItems.find(i => notFavorite(i.app));
         const folderPinned = folderIcon ? await dragToDock(pointer, folderIcon) : false;
         console.log(`CGTEST drag folder ${folderIcon?.app.get_id()} pinned=${folderPinned}`);
+
+        // Turning the extension off must give GNOME's grid back untouched.
+        const appDisplay = controls.appDisplay;
+        const patched = appDisplay._savePages;
+        Main.extensionManager.disableExtension(UUID);
+        await wait(1000);
+        console.log(`CGTEST disabled: grid back=${appDisplay._box.visible} ` +
+            `methods restored=${appDisplay._savePages !== patched} ` +
+            `view gone=${!appDisplay.get_children().includes(view)}`);
+        Main.extensionManager.enableExtension(UUID);
+        await wait(1000);
+        console.log(`CGTEST enabled again=${!!Main.extensionManager.lookup(UUID).stateObj._view}`);
     } catch (e) {
         console.log(`CGTEST error ${e}\n${e.stack}`);
     } finally {

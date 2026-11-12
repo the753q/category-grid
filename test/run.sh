@@ -31,7 +31,11 @@ rm -f "$SHOTS"/*.png
 # Real apps and usage stats (copied, so the test shell cannot overwrite them).
 cp -r ~/.local/share/applications "$ENV_DIR/data/" 2>/dev/null || true
 cp ~/.local/share/gnome-shell/application_state "$ENV_DIR/data/gnome-shell/" 2>/dev/null || true
-ln -s "$REPO" "$ENV_DIR/data/gnome-shell/extensions/category-grid@the753q.github.io"
+# A copy, so the settings schema can be compiled even if the repo is read-only.
+EXT="$ENV_DIR/data/gnome-shell/extensions/category-grid@the753q.github.io"
+mkdir "$EXT"
+cp -r "$REPO"/{extension.js,metadata.json,stylesheet.css,schemas} "$EXT"
+glib-compile-schemas --strict "$EXT/schemas"
 ln -s "$DRIVER" "$ENV_DIR/data/gnome-shell/extensions/category-grid-test@the753q.github.io"
 
 EXTENSIONS="\"category-grid@the753q.github.io\", \"category-grid-test@the753q.github.io\""

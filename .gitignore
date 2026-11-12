@@ -2,3 +2,4 @@ test/shots/
 test/shell.log
 *.shell-extension.zip
 test/shots-fedora/
+schemas/gschemas.compiled

@@ -1,6 +1,7 @@
 # Upstream GNOME (Fedora) for test/run-fedora.sh, with a few apps so that
 # several categories show up.
-FROM registry.fedoraproject.org/fedora:44
+ARG FEDORA=44
+FROM registry.fedoraproject.org/fedora:${FEDORA}
 
 RUN dnf -y install --setopt=install_weak_deps=False \
         gnome-shell mutter python3-gobject mesa-dri-drivers dbus-daemon dbus-tools dconf \

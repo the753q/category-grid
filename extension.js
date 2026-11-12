@@ -13,7 +13,7 @@ import * as IconGrid from 'resource:///org/gnome/shell/ui/iconGrid.js';
 import * as ParentalControlsManager from 'resource:///org/gnome/shell/misc/parentalControlsManager.js';
 import {ExtensionState} from 'resource:///org/gnome/shell/misc/extensionUtils.js';
 import {ControlsState} from 'resource:///org/gnome/shell/ui/overviewControls.js';
-import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
+import {Extension, InjectionManager} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 // First matching entry wins, so more specific categories go first
 // (e.g. "Development;Utility" lands in Programming, not Utilities).
@@ -41,6 +41,17 @@ const DISPLAY_ORDER = [
     'utilities', 'system', 'settings', 'other',
 ];
 
+// A category needs this many apps to get a tile of its own; the apps of
+// smaller ones are shown in Other rather than in a half-empty tile.
+const MIN_CATEGORY_APPS = 3;
+// The apps that open straight from a tile. They keep their cells from one
+// session to the next (the `top-apps` setting), so the tiles do not reshuffle
+// every time one app's usage overtakes another's.
+const TOP_APPS = 3;
+// How far ahead in usage an app must be to take over a cell: half an hour of
+// focus, in Shell.AppUsage's score of one point per 7 seconds.
+const TAKEOVER_LEAD = Math.round(30 * 60 / 7);
+
 const MIN_COLUMNS = 4;
 // Only used when even the widest grid does not fit at the preferred size.
 const FALLBACK_ICON_SIZES = [40, 32];
@@ -52,8 +63,8 @@ const TOOLTIP_SHOW_TIME = 150;
 // The hidden GNOME grid still reacts to every app drag. Its drag motion
 // handler throws on its never-laid-out pages, which aborts the drag update
 // before the dock gets to accept the icon; on drop it would also save its
-// empty layout over the user's app-picker-layout. Set on the AppDisplay
-// instance while enabled.
+// empty layout over the user's app-picker-layout. Overridden on AppDisplay
+// while enabled.
 const HIDDEN_GRID_OVERRIDES = {
     _onDragMotion: () => DND.DragMotionResult.CONTINUE,
     _ensurePlaceholder: () => {},
@@ -73,7 +84,36 @@ function categoryName(cat) {
     return Shell.util_get_translated_folder_name(cat.directory) ?? cat.fallback;
 }
 
-function buildModel() {
+// The apps on a category's tile, in cell order. `ranked` is the category
+// sorted by usage, `saved` the ids from last time and `used` the ids
+// Shell.AppUsage has a score for. Saved apps keep their cells; a free cell
+// goes to the most used app left, and after that an app only gets in by
+// clearly overtaking the least used one on the tile, whose cell it takes.
+export function tileApps(ranked, saved, usage, used) {
+    const top = saved.map(id => ranked.find(app => app.get_id() === id))
+        .filter(app => app).slice(0, TOP_APPS);
+
+    for (const app of ranked) {
+        if (top.includes(app))
+            continue;
+        if (top.length < TOP_APPS) {
+            top.push(app);
+            continue;
+        }
+        const weakest = top.reduce((a, b) => (ranked.indexOf(b) > ranked.indexOf(a) ? b : a));
+        // compare() is the score difference, but only between two apps that
+        // both have a score; an app that was never used gives way to any that was.
+        const overtaken = used.has(weakest.get_id())
+            ? usage.compare(weakest.get_id(), app.get_id()) >= TAKEOVER_LEAD
+            : used.has(app.get_id());
+        if (!overtaken)
+            break;
+        top[top.indexOf(weakest)] = app;
+    }
+    return top;
+}
+
+function buildModel(settings) {
     const appSys = Shell.AppSystem.get_default();
     const usage = Shell.AppUsage.get_default();
     const parental = ParentalControlsManager.getDefault();
@@ -100,17 +140,31 @@ function buildModel() {
         groups.get(cat.id).push(app);
     }
 
+    for (const cat of CATEGORIES) {
+        const apps = groups.get(cat.id);
+        if (apps.length < MIN_CATEGORY_APPS)
+            groups.get(OTHER.id).push(...apps.splice(0));
+    }
+
+    const used = new Set(usage.get_most_used().map(app => app.get_id()));
+    const saved = settings.get_value('top-apps').deepUnpack();
+    const topApps = {};
     const model = [];
     for (const id of DISPLAY_ORDER) {
         const cat = [...CATEGORIES, OTHER].find(c => c.id === id);
-        const apps = groups.get(id);
-        if (apps.length === 0)
+        const ranked = groups.get(id);
+        if (ranked.length === 0)
             continue;
-        apps.sort((a, b) =>
+        ranked.sort((a, b) =>
             usage.compare(a.get_id(), b.get_id()) ||
             a.get_name().localeCompare(b.get_name()));
+        const top = tileApps(ranked, saved[id] ?? [], usage, used);
+        topApps[id] = top.map(app => app.get_id());
+        const apps = [...top, ...ranked.filter(app => !top.includes(app))];
         model.push({cat, name: categoryName(cat), apps});
     }
+    if (JSON.stringify(topApps) !== JSON.stringify(saved))
+        settings.set_value('top-apps', new GLib.Variant('a{sas}', topApps));
     return model;
 }
 
@@ -166,6 +220,9 @@ class CategoryFolderView extends AppDisplay.FolderView {
     _init(folder, id, parentView, apps) {
         this._categoryApps = apps;
         super._init(folder, id, parentView);
+        // GNOME can leave the timer that flips pages during a drag running;
+        // it must not fire once this view is gone.
+        this.connect('destroy', () => this._resetDragPageSwitch());
     }
 
     _loadApps() {
@@ -183,15 +240,34 @@ class CategoryFolderView extends AppDisplay.FolderView {
     removeApp() {}
 });
 
+const CategoryFolderDialog = GObject.registerClass(
+class CategoryFolderDialog extends AppDisplay.AppFolderDialog {
+    // Dropping an app outside the dialog must not remove it from the category.
+    acceptDrop() {
+        this.popdown();
+        return false;
+    }
+});
+
+const CategoryAppIcon = GObject.registerClass(
+class CategoryAppIcon extends AppDisplay.AppIcon {
+    // GNOME would treat a drop on this icon as "create a folder" in the
+    // hidden grid (and crash on the missing label while previewing it).
+    _canAccept() {
+        return false;
+    }
+});
+
 const CategoryView = GObject.registerClass(
 class CategoryView extends St.Widget {
-    _init(appDisplay) {
+    _init(appDisplay, settings) {
         super._init({
             layout_manager: new Clutter.BinLayout(),
             x_expand: true,
             y_expand: true,
         });
         this._appDisplay = appDisplay;
+        this._settings = settings;
 
         const gridLayout = new Clutter.GridLayout();
         this._grid = new St.Widget({
@@ -246,6 +322,9 @@ class CategoryView extends St.Widget {
         }
         this._dockSettings?.disconnectObject(this);
         this._dockSettings = null;
+        this._settings = null;
+        Shell.AppSystem.get_default().disconnectObject(this);
+        Main.overview.disconnectObject(this);
         Main.extensionManager.disconnectObject(this);
         this._stateAdjustment.disconnectObject(this);
         St.ThemeContext.get_for_stage(global.stage).disconnectObject(this);
@@ -304,7 +383,7 @@ class CategoryView extends St.Widget {
 
     _rebuild() {
         if (this._modelDirty || !this._model) {
-            this._model = buildModel();
+            this._model = buildModel(this._settings);
             this._modelDirty = false;
         }
 
@@ -387,7 +466,7 @@ class CategoryView extends St.Widget {
         const openFolder = () => this._openFolder(tile, entry);
 
         const overflow = apps.length > 4;
-        const direct = apps.slice(0, overflow ? 3 : 4);
+        const direct = apps.slice(0, overflow ? TOP_APPS : 4);
         for (let i = 0; i < 4; i++) {
             let cell;
             if (i < direct.length)
@@ -419,31 +498,27 @@ class CategoryView extends St.Widget {
         const {cat, name, apps} = entry;
 
         if (!tile._cgDialog) {
+            // GNOME's folder view and dialog read their folder from settings.
+            // Kept in memory, so nothing is written to the user's app folders.
             const folder = new Gio.Settings({
                 schema_id: FOLDER_SCHEMA,
                 path: `${FOLDER_PATH}cg-${cat.id}/`,
+                backend: Gio.memory_settings_backend_new(),
             });
             // The folder name is fixed to the category; the dialog's rename button is hidden.
-            if (folder.get_string('name') !== name)
-                folder.set_string('name', name);
-            if (folder.get_boolean('translate'))
-                folder.set_boolean('translate', false);
+            folder.set_string('name', name);
+            folder.set_boolean('translate', false);
 
             // AppFolderDialog zooms out of its source and reads source.view / source.name,
             // which a FolderIcon would normally provide.
             tile.name = name;
             tile.view = new CategoryFolderView(folder, `cg-${cat.id}`, this._appDisplay, apps);
 
-            const dialog = new AppDisplay.AppFolderDialog(tile, folder, this._appDisplay);
+            const dialog = new CategoryFolderDialog(tile, folder, this._appDisplay);
             this._appDisplay.addFolderDialog(dialog);
             // Keep the rename button's space so the title stays centered, but make it
             // invisible and unusable.
             Object.assign(dialog._editButton, {opacity: 0, reactive: false, can_focus: false});
-            // Dropping an app outside the dialog must not remove it from the category.
-            dialog.acceptDrop = () => {
-                dialog.popdown();
-                return false;
-            };
             dialog.connect('open-state-changed', (d, isOpen) => {
                 tile.ease({
                     opacity: isOpen ? 0 : 255,
@@ -472,14 +547,11 @@ class CategoryView extends St.Widget {
     }
 
     _createAppCell(app, iconSize) {
-        const icon = new AppDisplay.AppIcon(app, {
+        const icon = new CategoryAppIcon(app, {
             showLabel: false,
             expandTitleOnHover: false,
         });
         icon.icon.setIconSize(iconSize);
-        // GNOME would treat a drop on this icon as "create a folder" in the
-        // hidden grid (and crash on the missing label while previewing it).
-        icon._canAccept = () => false;
         // Without a visible label, screen readers need the name explicitly.
         icon.accessible_name = app.get_name();
         this._addTooltip(icon, app.get_name());
@@ -492,7 +564,7 @@ class CategoryView extends St.Widget {
         const icon = new IconGrid.BaseIcon(name, {
             showLabel: false,
             setSizeManually: true,
-            createIcon: size => this._createSubIcons(apps.slice(3, 7), size),
+            createIcon: size => this._createSubIcons(apps.slice(TOP_APPS, TOP_APPS + 4), size),
         });
         icon.setIconSize(iconSize);
 
@@ -581,12 +653,17 @@ export default class CategoryGridExtension extends Extension {
         // Build the view before touching GNOME's grid: if a future GNOME
         // breaks this, enable() throws, GNOME marks the extension as failed
         // (without calling disable()) and the original grid must still be there.
-        const view = new CategoryView(appDisplay);
+        this._settings = this.getSettings();
+        const view = new CategoryView(appDisplay, this._settings);
         appDisplay.add_child(view);
         // Hide GNOME's paged grid but keep AppDisplay itself: the overview
         // still positions, shows and animates it when switching to the app grid.
         appDisplay._box.hide();
-        Object.assign(appDisplay, HIDDEN_GRID_OVERRIDES);
+        this._injections = new InjectionManager();
+        for (const [name, override] of Object.entries(HIDDEN_GRID_OVERRIDES)) {
+            this._injections.overrideMethod(
+                AppDisplay.AppDisplay.prototype, name, () => override);
+        }
         this._appDisplay = appDisplay;
         this._view = view;
     }
@@ -594,11 +671,10 @@ export default class CategoryGridExtension extends Extension {
     disable() {
         this._view?.destroy();
         this._view = null;
-        if (this._appDisplay) {
-            for (const name of Object.keys(HIDDEN_GRID_OVERRIDES))
-                delete this._appDisplay[name];
-            this._appDisplay._box.show();
-        }
+        this._injections?.clear();
+        this._injections = null;
+        this._appDisplay?._box.show();
         this._appDisplay = null;
+        this._settings = null;
     }
 }
