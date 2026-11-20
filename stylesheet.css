@@ -1,6 +1,7 @@
 /* Only sizes live here. Colors, hover and focus come from the shell theme
- * through the classes the widgets reuse (.app-folder, .overview-tile,
- * .dash-label), so light, dark and high contrast styles follow the system. */
+ * through the classes the widgets reuse (.app-folder, .app-folder-dialog,
+ * .overview-tile, .dash-label), so light, dark and high contrast styles
+ * follow the system. */
 
 /* Space between category tiles. */
 .cg-grid {
@@ -12,6 +13,20 @@
 .cg-tile {
   border-radius: 28px;
   padding: 8px;
+}
+
+/* The cells' container. It is an .app-folder-dialog only so the cells get
+ * the open folder's hover, press and focus colors; the dialog's own size,
+ * background and border are reset, leaving the .app-folder tile as it is. */
+.app-folder-dialog.cg-cells {
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
   spacing: 4px;
 }
 
@@ -24,7 +39,7 @@
 }
 
 /* Placeholder cell in categories with fewer than four apps. */
-.overview-tile.cg-empty {
+.cg-cells .overview-tile.cg-empty {
   background-color: transparent;
   box-shadow: none;
 }

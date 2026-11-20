@@ -242,6 +242,17 @@ class CategoryFolderView extends AppDisplay.FolderView {
 
 const CategoryFolderDialog = GObject.registerClass(
 class CategoryFolderDialog extends AppDisplay.AppFolderDialog {
+    // On popdown GNOME moves the key focus back into the dialog, meant for the
+    // rename button. That button is hidden here, so the focus lands on the
+    // first app instead and the grid scrolls back to its first page on its
+    // own, leaving the page arrows as they were. Going back through the view
+    // first keeps the arrows in step.
+    popdown(callback) {
+        if (this._isOpen)
+            this._view.goToPage(0);
+        super.popdown(callback);
+    }
+
     // Dropping an app outside the dialog must not remove it from the category.
     acceptDrop() {
         this.popdown();
@@ -456,12 +467,23 @@ class CategoryView extends St.Widget {
             row_homogeneous: true,
             column_homogeneous: true,
         });
-        // .app-folder gives the tile the theme's folder background.
-        const tile = new St.Widget({
-            style_class: 'app-folder cg-tile',
+        // The cells sit in an .app-folder-dialog, so the theme gives their
+        // hover, press and focus the colors of the open folder dialog: the
+        // grid's own .overview-tile colors are meant for the overview background
+        // and barely show on a folder. stylesheet.css strips the dialog's own
+        // box (size, background, border) from this container.
+        const cells = new St.Widget({
+            style_class: 'app-folder-dialog cg-cells',
             layout_manager: tileLayout,
+            x_expand: true,
+            y_expand: true,
         });
-        bindSpacing(tile, tileLayout, 'spacing', 'spacing');
+        bindSpacing(cells, tileLayout, 'spacing', 'spacing');
+        // .app-folder gives the tile the theme's folder background.
+        const tile = new St.Bin({
+            style_class: 'app-folder cg-tile',
+            child: cells,
+        });
 
         const openFolder = () => this._openFolder(tile, entry);
 

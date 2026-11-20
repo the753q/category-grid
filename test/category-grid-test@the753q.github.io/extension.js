@@ -199,7 +199,7 @@ async function run() {
         // Dropping an app on another tile app must not create a GNOME folder.
         const folders = new Gio.Settings({schema_id: 'org.gnome.desktop.app-folders'});
         const foldersBefore = folders.get_strv('folder-children').join(',');
-        const [first, second] = view._grid.get_children()[0].get_children()[0].get_children();
+        const [first, second] = view._grid.get_children()[0].get_children()[0].child.get_children();
         await drag(pointer, first, ...center(second));
         const foldersAfter = folders.get_strv('folder-children').join(',');
         console.log(`CGTEST drop on tile app: folders unchanged=${foldersBefore === foldersAfter}`);
@@ -208,7 +208,7 @@ async function run() {
 
         // Drag a tile app to the dock.
         const tileIcon = view._grid.get_children()
-            .flatMap(box => box.get_children()[0].get_children())
+            .flatMap(box => box.get_children()[0].child.get_children())
             .find(cell => cell.app && notFavorite(cell.app));
         const tilePinned = await dragToDock(pointer, tileIcon);
         console.log(`CGTEST drag tile ${tileIcon.app.get_id()} pinned=${tilePinned}`);
