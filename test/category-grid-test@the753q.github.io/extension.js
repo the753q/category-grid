@@ -106,7 +106,9 @@ async function testTileApps() {
         ['saved cells are kept', run({a: 900, b: 100, c: 500}, ['c', 'b', 'a']), 'cba'],
         ['a small lead changes nothing', run({a: 900, b: 100, c: 500, d: 300}, ['c', 'b', 'a']), 'cba'],
         ['a clear lead takes the weakest cell', run({a: 900, b: 100, c: 500, d: 400}, ['c', 'b', 'a']), 'cda'],
-        ['never used gives way to used', run({a: 5, b: 5, d: 1}, ['a', 'b', 'c']), 'abd'],
+        ['first use does not take a never used cell', run({a: 5, b: 5, d: 1}, ['a', 'b', 'c']), 'abc'],
+        ['a clear lead takes a never used cell', run({a: 5, b: 5, d: 400}, ['a', 'b', 'c']), 'abd'],
+        ['the lead counts from the least used app', run({a: 100, b: 100, d: 300}, ['a', 'b', 'c']), 'abc'],
         ['never used keeps its cell otherwise', run({a: 5, b: 5}, ['a', 'c', 'b']), 'acb'],
         ['an uninstalled app frees its cell', run({a: 9, b: 8, c: 7}, ['gone', 'c', 'b']), 'cba'],
     ];

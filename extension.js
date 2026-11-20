@@ -89,9 +89,24 @@ function categoryName(cat) {
 // Shell.AppUsage has a score for. Saved apps keep their cells; a free cell
 // goes to the most used app left, and after that an app only gets in by
 // clearly overtaking the least used one on the tile, whose cell it takes.
+// That takes the same lead whether or not the app on the tile was ever used,
+// so opening an app for the first time does not move anything.
 export function tileApps(ranked, saved, usage, used) {
     const top = saved.map(id => ranked.find(app => app.get_id() === id))
         .filter(app => app).slice(0, TOP_APPS);
+
+    // compare() is the score difference only between two apps that both have
+    // a score. Against an app without one, an app's lead is measured from the
+    // least used app that has a score, which can only understate it.
+    let floor;
+    const leadOver = (weakest, app) => {
+        if (used.has(weakest.get_id()))
+            return usage.compare(weakest.get_id(), app.get_id());
+        if (!used.has(app.get_id()))
+            return 0;
+        floor ??= [...used].reduce((a, b) => (usage.compare(a, b) < 0 ? b : a));
+        return usage.compare(floor, app.get_id());
+    };
 
     for (const app of ranked) {
         if (top.includes(app))
@@ -101,12 +116,7 @@ export function tileApps(ranked, saved, usage, used) {
             continue;
         }
         const weakest = top.reduce((a, b) => (ranked.indexOf(b) > ranked.indexOf(a) ? b : a));
-        // compare() is the score difference, but only between two apps that
-        // both have a score; an app that was never used gives way to any that was.
-        const overtaken = used.has(weakest.get_id())
-            ? usage.compare(weakest.get_id(), app.get_id()) >= TAKEOVER_LEAD
-            : used.has(app.get_id());
-        if (!overtaken)
+        if (leadOver(weakest, app) < TAKEOVER_LEAD)
             break;
         top[top.indexOf(weakest)] = app;
     }
